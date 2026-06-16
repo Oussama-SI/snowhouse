@@ -2,52 +2,20 @@ USE ROLE accountadmin;
 USE WAREHOUSE compute_wh;
 USE DATABASE tasty_bytes;
 
--- Create the stored procedure, define its logic with Snowpark for Python, write sales to raw_pos.daily_sales_hamburg_t
-CREATE OR REPLACE PROCEDURE tasty_bytes.raw_pos.process_order_headers_stream()
-  RETURNS STRING
-  LANGUAGE PYTHON
-  RUNTIME_VERSION = '3.10'
-  HANDLER ='process_order_headers_stream'
-  PACKAGES = ('snowflake-snowpark-python')
+-- Task that runs executes every minute
+CREATE OR REPLACE TASK tasty_bytes.raw_pos.process_orders_header_sproc
+WAREHOUSE = 'COMPUTE_WH'
+SCHEDULE = 'USING CRON * * * * * UTC'
 AS
-$$
-import snowflake.snowpark.functions as F
-from snowflake.snowpark import Session
+CALL tasty_bytes.raw_pos.process_order_headers_stream();
 
-def process_order_headers_stream(session: Session) -> float:
-    # Query the stream
-    recent_orders = session.table("order_header_stream").filter(F.col("METADATA$ACTION") == "INSERT")
-    
-    # Look up location of the orders in the stream using the LOCATIONS table
-    locations = session.table("location")
-    hamburg_orders = recent_orders.join(
-        locations,
-        recent_orders["LOCATION_ID"] == locations["LOCATION_ID"]
-    ).filter(
-        (locations["CITY"] == "Hamburg") &
-        (locations["COUNTRY"] == "Germany")
-    )
-    
-    # Calculate the sum of sales in Hamburg
-    total_sales = hamburg_orders.group_by(F.date_trunc('DAY', F.col("ORDER_TS"))).agg(
-        F.coalesce(F.sum("ORDER_TOTAL"), F.lit(0)).alias("total_sales")
-    )
-    
-    # Select the columns with proper aliases and convert to date type
-    daily_sales = total_sales.select(
-        F.col("DATE_TRUNC('DAY', ORDER_TS)").cast("DATE").alias("DATE"),
-        F.col("total_sales")
-    )
-    
-    # Write the results to the DAILY_SALES_HAMBURG_T table
-    total_sales.write.mode("append").save_as_table("raw_pos.daily_sales_hamburg_t")
-    
-    # Return a message indicating the operation was successful
-    return "Daily sales for Hamburg, Germany have been successfully written to raw_pos.daily_sales_hamburg_t"
-$$;
+-- Activate the task to run
+ALTER TASK tasty_bytes.raw_pos.process_orders_header_sproc RESUME;
 
+-- Query the table
+SELECT * FROM tasty_bytes.raw_pos.daily_sales_hamburg_t;
 
--- Insert dummy data for a sale occurring at a location in Hamburg
+-- Insert some dummy data into ORDER_HEADER
 INSERT INTO tasty_bytes.raw_pos.order_header (
     ORDER_ID, 
     TRUCK_ID, 
@@ -68,27 +36,37 @@ INSERT INTO tasty_bytes.raw_pos.order_header (
 ) VALUES (
     123456789,                     -- ORDER_ID
     101,                           -- TRUCK_ID
-    4493,                          -- LOCATION_ID
+    4494,                          -- LOCATION_ID
     null,                          -- CUSTOMER_ID
     null,                          -- DISCOUNT_ID
     123456789,                     -- SHIFT_ID
     '08:00:00',                    -- SHIFT_START_TIME
     '16:00:00',                    -- SHIFT_END_TIME
     null,                          -- ORDER_CHANNEL
-    '2023-07-01 12:30:45',         -- ORDER_TS
+    '2024-01-12 12:30:45',         -- ORDER_TS
     null,                          -- SERVED_TS
     'USD',                         -- ORDER_CURRENCY
-    41.30,                         -- ORDER_AMOUNT
+    22.00,                         -- ORDER_AMOUNT
     null,                          -- ORDER_TAX_AMOUNT
     null,                          -- ORDER_DISCOUNT_AMOUNT
-    45.80                          -- ORDER_TOTAL
+    24.50                          -- ORDER_TOTAL
 );
 
--- Confirm the insert
-SELECT * FROM tasty_bytes.raw_pos.order_header WHERE location_id = 4493;
-
--- Call the stored procedure
-CALL tasty_bytes.raw_pos.process_order_headers_stream();
-
--- Confirm the insert to the daily_sales_hamburg_t table
+-- Wait 1 minute before running this, query the table once more
 SELECT * FROM tasty_bytes.raw_pos.daily_sales_hamburg_t;
+
+-- Suspend the task
+ALTER TASK tasty_bytes.raw_pos.process_orders_header_sproc SUSPEND;
+
+
+-- Optional: recreate the task such that it executes every 24 hours
+-- CREATE OR REPLACE TASK tasty_bytes.raw_pos.process_orders_header_sproc
+-- SCHEDULE = 'USING CRON 0 0 * * * UTC'
+-- AS
+-- CALL tasty_bytes.raw_pos.process_order_headers_stream();
+
+-- Optional: Start the task
+-- ALTER TASK tasty_bytes.raw_pos.process_orders_header_sproc RESUME;
+
+-- Required: Stop the task if you started it using the command directly above this one
+-- ALTER TASK tasty_bytes.raw_pos.process_orders_header_sproc SUSPEND;
