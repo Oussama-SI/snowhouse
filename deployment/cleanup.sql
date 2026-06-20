@@ -14,6 +14,7 @@ DROP VIEW tasty_bytes.harmonized.weather_hamburg;
 
 DROP VIEW tasty_bytes.analytics.daily_city_metrics_v;
 
-DROP STREAM tasty_bytes.raw_pos.order_header_stream ON TABLE tasty_bytes.raw_pos.order_header;
+DROP STREAM tasty_bytes.raw_pos.order_header_stream;
+-- ON TABLE tasty_bytes.raw_pos.order_header
 
 DROP PROCEDURE tasty_bytes.raw_pos.process_order_headers_stream();
