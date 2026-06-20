@@ -2,7 +2,7 @@ USE ROLE accountadmin;
 USE WAREHOUSE compute_wh;
 
 USE DATABASE tasty_bytes;
-DROP VIEW tasty_bytes.harmonized.daily_weather_v;
+-- DROP VIEW tasty_bytes.harmonized.daily_weather_v;
 
 DROP VIEW tasty_bytes.harmonized.windspeed_hamburg;
 
